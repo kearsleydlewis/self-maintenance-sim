@@ -4,6 +4,7 @@ import time
 import signal
 import threading
 import random
+import argparse
 import sys
 # import pandas as pd
 from enum import Enum
@@ -140,6 +141,7 @@ class Robot:
 
         # state settings
         self.state = ROBOT_STATE.TASK # task | go_to_hs | healing
+        self.task_up_time = 0 # total time doing task
         self.task = ROBOT_TASK.MOVE # move | dig
         self.heal_next = False
         self.heal_now = False
@@ -169,6 +171,7 @@ class Robot:
 
     def step(self, dt):
         if (self.state == ROBOT_STATE.TASK):
+            self.task_up_time += dt
             if (self.task == ROBOT_TASK.MOVE):
                 self.move(dt, self.goal)
             else:
@@ -274,7 +277,7 @@ class Robot:
         self.task_start_move()
 
     def get_data(self):
-        return {'name': self.name, 'state': self.state.value, 'task': self.task.value, 'treasures': self.treasures, 'total_distance': self.distance_traveled, 'shovel': self.components['shovel'].get_data(), 'left_wheel': self.components['left_wheel'].get_data(), 'right_wheel': self.components['right_wheel'].get_data()}
+        return {'name': self.name, 'state': self.state.value, 'task_up_time': self.task_up_time, 'task': self.task.value, 'treasures': self.treasures, 'total_distance': self.distance_traveled, 'shovel': self.components['shovel'].get_data(), 'left_wheel': self.components['left_wheel'].get_data(), 'right_wheel': self.components['right_wheel'].get_data()}
 
 class HealthStation:
     def __init__(self, name, start_pos, num_bays):
@@ -434,7 +437,7 @@ class HealthManager:
 
 class Simulation:
 
-    def __init__(self, map_size, health_locs, num_robots, num_hs, num_bays, dt=0.1, max_time=200, real_time=True):
+    def __init__(self, map_size, health_locs, num_robots, num_hs, num_bays, dt=0.1, max_time=200, real_time=True, data_output=False):
         self.map_size = map_size
         self.dt = dt
         self.max_time = max_time
@@ -443,6 +446,7 @@ class Simulation:
         
         self.data = {}
         self.filename = f'{num_robots}_{num_hs}_{num_bays}.json'
+        self.data_output = data_output
         
         self.robots = [] # : list[Robot]
         for i in range(0, num_robots):
@@ -554,41 +558,55 @@ class Simulation:
         for robot in self.robots:
             robot.health_manager.stop()
 
-        # with open(self.filename, 'w', encoding='utf-8') as f:
-        #     print(f'{self.filename} dump')
-        #     json.dump(self.data, f, ensure_ascii=False, indent=2)
-        
-        # sys.exit(0)
+        if self.data_output:
+            with open(self.filename, 'w', encoding='utf-8') as f:
+                print(f'{self.filename} dump')
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
+        else:
+            sys.exit(0)
     
 if __name__ == '__main__':
 
-    map_size = 20
-    max_time = 600 # 10 min
-    dt = 0.2
-    real_time = False
+    parser = argparse.ArgumentParser(prog='Self-Maintenance Simulation')
 
+    parser.add_argument('-s', '--map_size', type=int, default=20, help="Size of the square map in meters (default = 20m).")
+    parser.add_argument('-t', '--max_time', type=int, default=600, help="Maximum time of the simulation (default = 600s).")
+    parser.add_argument('-dt', '--time_step', type=float, default=0.2, help="Size of simulation time step (default = 0.2s).")
+    parser.add_argument('--real_time', help="Run the simulation in real time, which will show plot in real time (unless there are too many robots/hs, then it will lag a bit).", action="store_true")
+
+    parser.add_argument('--data_output', help="Generate the data for plotting instead of running simulation", action="store_true")
+
+    args = parser.parse_args()
+
+    map_size = args.map_size
+    max_time = args.max_time # 10 min
+    dt = args.time_step
+    real_time = args.real_time
+    
+    # health station positions for 1, 2, and 3 health stations (assumes size 20 map)
+    # positions are arbitrary, but chosen to minimize distance to any health station
     # 1-3 hs
     hs_pos = {}
-    hs_pos[1] = [np.array([10.0,10.0])]
-    hs_pos[2] = [np.array([6.66, 6.66]), np.array([13.33, 13.33])]
-    hs_pos[3] = [np.array([5.0, 15.0]), np.array([8.0, 5.0]),  np.array([15.0, 12.0])]
+    hs_pos[1] = [np.array([0.5 * map_size, 0.5 * map_size])]
+    hs_pos[2] = [np.array([0.333 * map_size, 0.333 * map_size]), np.array([0.666 * map_size, 0.666 * map_size])]
+    hs_pos[3] = [np.array([0.25 * map_size, 0.75 * map_size]), np.array([0.4 * map_size, 0.25 * map_size]),  np.array([0.75 * map_size, 0.6 * map_size])]
 
-    sim = Simulation(20, hs_pos[3], 9, 3, 3, dt=0.2, max_time=300, real_time=True)
+    print(map_size, max_time, dt, real_time)
 
-    
+    if (args.data_output):
+        # 1-10 robots
+        for num_robot in range(1, 11):
+            # 1-3 health stations
+            for num_hs in range(1,4):
+                # 1-3 bays at each health station
+                for num_bays in range(1, 4):
+                    print(f'Robots: {num_robot}\tHealth Stations: {num_hs}\tBays: {num_bays}')
+                    np.random.seed(42) # for reproducability 
+                    Simulation(map_size, hs_pos[num_hs], num_robots=num_robot, num_hs=num_hs, num_bays=num_bays, dt=dt, max_time=max_time, real_time=False, data_output=True).start()
 
-    # # 1-10 robots
-    # for num_robot in range(1, 11):
-    #     for num_hs in range(1,4):
-    #         for num_bays in range(1, 4):
-    #             print(f'{num_robot} {num_hs} {num_bays}')
-    #             np.random.seed(42)
-    #             Simulation(map_size, hs_pos[num_hs], num_robots=num_robot, num_hs=num_hs, num_bays=num_bays, dt=dt, max_time=max_time, real_time=False).start()
+    else:
+        sim = Simulation(map_size, hs_pos[3], 10, 3, 3, dt=dt, max_time=max_time, real_time=real_time, data_output=False)
 
-    
+        signal.signal(signal.SIGINT, sim.stop)
 
-    # 1-3 bays
-    
-    signal.signal(signal.SIGINT, sim.stop)
-
-    sim.start()
+        sim.start()
