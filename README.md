@@ -29,3 +29,10 @@ optional arguments:
 This command will generate 90 (10 * 3 * 3) JSON files in the format `{number of robots}_{number of health stations}_{number of bays at each health station}.json`. These files contain the state at each step in the simulation, which can be used by the plotting script to generate the plots for the paper.
 
 3. Using generated JSON values, generate the plots with `python plotting.py`
+
+
+##### Version Info
+
+- python 3.8.5
+- NumPy 1.19.2
+- Matplotlib 3.3.2
